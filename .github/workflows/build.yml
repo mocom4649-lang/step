@@ -10,7 +10,8 @@ jobs:
       - name: Setup Theos on macOS
         run: |
           brew install ldid xz dpkg
-          git clone --recursive https://github.com ~/theos
+          git clone https://github.com ~/theos
+          cd ~/theos && git submodule update --init --recursive || true
           mkdir -p ~/theos/sdks
           cp -r "$(xcrun --sdk iphoneos --show-sdk-path)" ~/theos/sdks/
 
