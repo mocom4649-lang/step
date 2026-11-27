@@ -1,4 +1,4 @@
-name: Build StepMultiplier
+name: Build StepMultiplier (Theos Release)
 
 on:
   workflow_dispatch:
@@ -7,11 +7,12 @@ jobs:
   build:
     runs-on: macos-latest
     steps:
-      - name: Setup Theos on macOS
+      - name: Download Prebuilt Theos
         run: |
           brew install ldid xz dpkg
-          git clone https://github.com ~/theos
-          cd ~/theos && git submodule update --init --recursive || true
+          mkdir -p ~/theos
+          curl -L https://github.com -o theos.tar.lzma
+          tar --lzma -xf theos.tar.lzma -C ~/theos
           mkdir -p ~/theos/sdks
           cp -r "$(xcrun --sdk iphoneos --show-sdk-path)" ~/theos/sdks/
 
