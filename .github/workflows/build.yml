@@ -1,0 +1,63 @@
+name: Build StepMultiplier
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Tweak Files
+        run: |
+          cat << 'EOF' > Makefile
+          THEOS_PACKAGE_SCHEME = rootless
+          TARGET := iphone:clang:latest:15.0
+          INSTALL_TARGET_PROCESSES = SpringBoard healthd
+          include $(THEOS)/makefiles/common.mk
+          TWEAK_NAME = StepMultiplier
+          StepMultiplier_FILES = Tweak.x
+          StepMultiplier_CFLAGS = -fobjc-arc
+          StepMultiplier_FRAMEWORKS = CoreMotion Foundation
+          include $(THEOS_MAKE_PATH)/tweak.mk
+          EOF
+
+          cat << 'EOF' > control
+          Package: com.custom.stepmultiplier
+          Name: StepMultiplier
+          Version: 1.0.0
+          Architecture: iphoneos-arm64
+          Description: Multiply CoreMotion step count
+          Maintainer: Custom
+          Author: Custom
+          Section: Tweaks
+          Depends: mobilesubstrate (>= 0.9.5000)
+          EOF
+
+          cat << 'EOF' > Tweak.x
+          #import <CoreMotion/CoreMotion.h>
+          %hook CMPedometerData
+          - (NSNumber *)numberOfSteps {
+              NSNumber *original = %orig;
+              return original ? @(original.integerValue * 3) : original;
+          }
+          %end
+          EOF
+
+          cat << 'EOF' > StepMultiplier.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://apple.com">
+          <plist version="1.0">
+          <dict><key>Filter</key><dict><key>Executables</key><array><string>healthd</string><string>SpringBoard</string></array></dict></dict>
+          </plist>
+          EOF
+
+      - name: Build Deb
+        uses: Beerpsi/theos-action@v1
+        with:
+          args: clean package FINALPACKAGE=1
+
+      - name: Upload Deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: StepMultiplier-deb
+          path: packages/*.deb
