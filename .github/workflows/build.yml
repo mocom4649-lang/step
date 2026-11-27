@@ -7,9 +7,20 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Install Dependencies and Theos
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fakeroot git perl clang lld dpkg-dev curl unzip
+          git clone --recursive https://github.com ~/theos
+          mkdir -p ~/theos/sdks
+          curl -sL https://github.com -o sdks.zip
+          unzip -q sdks.zip
+          mv sdks-master/*.sdk ~/theos/sdks/
+
       - name: Generate Tweak Files
         run: |
           cat << 'EOF' > Makefile
+          export THEOS = $(HOME)/theos
           THEOS_PACKAGE_SCHEME = rootless
           TARGET := iphone:clang:latest:15.0
           INSTALL_TARGET_PROCESSES = SpringBoard healthd
@@ -52,9 +63,9 @@ jobs:
           EOF
 
       - name: Build Deb
-        uses: Beerpsi/theos-action@v1
-        with:
-          args: clean package FINALPACKAGE=1
+        run: |
+          export THEOS=~/theos
+          make package FINALPACKAGE=1
 
       - name: Upload Deb
         uses: actions/upload-artifact@v4
