@@ -5,17 +5,12 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
-      - name: Install Dependencies and Theos
+      - name: Setup Theos on macOS
         run: |
-          sudo apt-get update
-          sudo apt-get install -y fakeroot git perl clang lld dpkg-dev curl unzip
+          brew install ldid xz dpkg
           git clone --recursive https://github.com ~/theos
-          mkdir -p ~/theos/sdks
-          curl -sL https://github.com -o sdks.zip
-          unzip -q sdks.zip
-          mv sdks-master/*.sdk ~/theos/sdks/
 
       - name: Generate Tweak Files
         run: |
