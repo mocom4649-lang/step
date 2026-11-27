@@ -1,4 +1,4 @@
-name: Build StepMultiplier (Theos Release)
+name: Build StepMultiplier Instant
 
 on:
   workflow_dispatch:
@@ -6,68 +6,78 @@ on:
 jobs:
   build:
     runs-on: macos-latest
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
-      - name: Download Prebuilt Theos
+      - name: Build Dylib and Deb
         run: |
-          brew install ldid xz dpkg
-          mkdir -p ~/theos
-          curl -L https://github.com -o theos.tar.lzma
-          tar --lzma -xf theos.tar.lzma -C ~/theos
-          mkdir -p ~/theos/sdks
-          cp -r "$(xcrun --sdk iphoneos --show-sdk-path)" ~/theos/sdks/
+          brew install ldid dpkg
 
-      - name: Generate Tweak Files
-        run: |
-          cat << 'EOF' > Makefile
-          export THEOS = $(HOME)/theos
-          THEOS_PACKAGE_SCHEME = rootless
-          TARGET := iphone:clang:latest:15.0
-          INSTALL_TARGET_PROCESSES = SpringBoard healthd
-          include $(THEOS)/makefiles/common.mk
-          TWEAK_NAME = StepMultiplier
-          StepMultiplier_FILES = Tweak.x
-          StepMultiplier_CFLAGS = -fobjc-arc
-          StepMultiplier_FRAMEWORKS = CoreMotion Foundation
-          include $(THEOS_MAKE_PATH)/tweak.mk
+          mkdir -p pkg/var/jb/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p pkg/DEBIAN
+
+          cat << 'EOF' > Tweak.m
+          #import <Foundation/Foundation.h>
+          #import <CoreMotion/CoreMotion.h>
+          #import <objc/runtime.h>
+
+          static IMP orig_numberOfSteps;
+
+          NSNumber* hooked_numberOfSteps(id self, SEL _cmd) {
+              NSNumber *original = ((NSNumber* (*)(id, SEL))orig_numberOfSteps)(self, _cmd);
+              return original ? @(original.integerValue * 3) : original;
+          }
+
+          __attribute__((constructor))
+          static void init(void) {
+              Class cls = objc_getClass("CMPedometerData");
+              if (cls) {
+                  Method m = class_getInstanceMethod(cls, @selector(numberOfSteps));
+                  if (m) {
+                      orig_numberOfSteps = method_setImplementation(m, (IMP)hooked_numberOfSteps);
+                  }
+              }
+          }
           EOF
 
-          cat << 'EOF' > control
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          clang -arch arm64 -arch arm64e -isysroot "$SDK" -mios-version-min=15.0 -fobjc-arc -shared -framework Foundation -framework CoreMotion Tweak.m -o pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/StepMultiplier.dylib
+          ldid -S pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/StepMultiplier.dylib
+
+          cat << 'EOF' > pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/StepMultiplier.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://apple.com">
+          <plist version="1.0">
+          <dict>
+            <key>Filter</key>
+            <dict>
+              <key>Executables</key>
+              <array>
+                <string>healthd</string>
+                <string>SpringBoard</string>
+              </array>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+
+          cat << 'EOF' > pkg/DEBIAN/control
           Package: com.custom.stepmultiplier
           Name: StepMultiplier
           Version: 1.0.0
           Architecture: iphoneos-arm64
-          Description: Multiply CoreMotion step count
+          Description: Multiply CoreMotion step count (3x)
           Maintainer: Custom
           Author: Custom
           Section: Tweaks
           Depends: mobilesubstrate (>= 0.9.5000)
           EOF
 
-          cat << 'EOF' > Tweak.x
-          #import <CoreMotion/CoreMotion.h>
-          %hook CMPedometerData
-          - (NSNumber *)numberOfSteps {
-              NSNumber *original = %orig;
-              return original ? @(original.integerValue * 3) : original;
-          }
-          %end
-          EOF
-
-          cat << 'EOF' > StepMultiplier.plist
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://apple.com">
-          <plist version="1.0">
-          <dict><key>Filter</key><dict><key>Executables</key><array><string>healthd</string><string>SpringBoard</string></array></dict></dict>
-          </plist>
-          EOF
-
-      - name: Build Deb
-        run: |
-          export THEOS=~/theos
-          make package FINALPACKAGE=1
+          dpkg-deb -Zxz -b pkg StepMultiplier.deb
 
       - name: Upload Deb
         uses: actions/upload-artifact@v4
         with:
           name: StepMultiplier-deb
-          path: packages/*.deb
+          path: StepMultiplier.deb
